@@ -4,31 +4,30 @@ import java.io.*;
 import java.net.*;
 
 public class ChatClientGUI extends JFrame {
+    private JTextField txtIP, txtPort, txtMessage;  // Campos de texto para ingresar IP, puerto y mensajes
+    private JButton btnConnect;  // Botón para conectar/desconectar
+    private JTextArea chatArea;  // Área de texto para mostrar los mensajes del chat
+    private JTextField txtUsername;  // Campo de texto para el nombre de usuario
 
-    private JTextField txtIP, txtPort, txtMessage;
-    private JButton btnConnect;
-    private JTextArea chatArea;
-    private JTextField txtUsername;
+    private Socket socket;  // Socket para la conexión con el servidor
+    private PrintWriter out;  // Flujo de salida para enviar mensajes al servidor
+    private BufferedReader in;  // Flujo de entrada para recibir mensajes del servidor
+    private Thread listenThread;  // Hilo para escuchar los mensajes entrantes del servidor
 
-    private Socket socket;
-    private PrintWriter out;
-    private BufferedReader in;
-    private Thread listenThread;
-
-    private boolean connected = false;
+    private boolean connected = false;  // Bandera para saber si el cliente está conectado
 
     public ChatClientGUI() {
-        setTitle("Chat Cliente");
-        setSize(500, 400);
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setLayout(new BorderLayout());
+        setTitle("Chat Cliente");  // Título de la ventana
+        setSize(500, 400);  // Tamaño de la ventana
+        setDefaultCloseOperation(EXIT_ON_CLOSE);  // Acción al cerrar la ventana
+        setLayout(new BorderLayout());  // Layout de la ventana (distribución de los componentes)
 
-        // Panel superior
+        // Panel superior con campos de IP, puerto y nombre de usuario
         JPanel topPanel = new JPanel();
-        txtIP = new JTextField("127.0.0.1", 10);
-        txtPort = new JTextField("9090", 5);
-        txtUsername = new JTextField("Usuario", 8); // nuevo campo
-        btnConnect = new JButton("Conectar");
+        txtIP = new JTextField("127.0.0.1", 10);  // IP por defecto (localhost)
+        txtPort = new JTextField("9090", 5);  // Puerto por defecto
+        txtUsername = new JTextField("Usuario", 8);  // Nombre de usuario por defecto
+        btnConnect = new JButton("Conectar");  // Botón para conectar/desconectar
         topPanel.add(new JLabel("IP:"));
         topPanel.add(txtIP);
         topPanel.add(new JLabel("Puerto:"));
@@ -36,60 +35,62 @@ public class ChatClientGUI extends JFrame {
         topPanel.add(new JLabel("Nombre:"));
         topPanel.add(txtUsername);
         topPanel.add(btnConnect);
-
-        topPanel.setPreferredSize(new Dimension(0, 60)); // ancho 0 = ajustable
+        topPanel.setPreferredSize(new Dimension(0, 60));
         add(topPanel, BorderLayout.NORTH);
 
-        // Área de chat
+        // Área de chat donde se mostrarán los mensajes
         chatArea = new JTextArea();
-        chatArea.setEditable(false);
+        chatArea.setEditable(false);  // No se puede editar directamente desde el área de chat
         add(new JScrollPane(chatArea), BorderLayout.CENTER);
 
-        // Panel inferior
+        // Panel inferior con campo para el mensaje y botón para enviarlo
         JPanel bottomPanel = new JPanel();
         txtMessage = new JTextField(30);
         JButton btnSend = new JButton("Enviar");
         bottomPanel.add(txtMessage);
         bottomPanel.add(btnSend);
-
         add(bottomPanel, BorderLayout.SOUTH);
 
-        // Eventos
-        btnConnect.addActionListener(e -> toggleConnection());
-        btnSend.addActionListener(e -> sendMessage());
-        txtMessage.addActionListener(e -> sendMessage());
+        // Eventos (Acciones de los botones)
+        btnConnect.addActionListener(e -> toggleConnection());  // Conectar/desconectar
+        btnSend.addActionListener(e -> sendMessage());  // Enviar mensaje
+        txtMessage.addActionListener(e -> sendMessage());  // Enviar mensaje al presionar Enter
     }
 
+    // Método para conectar o desconectar del servidor
     private void toggleConnection() {
-        if (!connected) {
+        if (!connected) {  // Si no está conectado, intenta conectar
             try {
+                // Crea el socket con la IP y el puerto proporcionados
                 socket = new Socket(txtIP.getText(), Integer.parseInt(txtPort.getText()));
-                out = new PrintWriter(socket.getOutputStream(), true);
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out = new PrintWriter(socket.getOutputStream(), true);  // Flujo de salida
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));  // Flujo de entrada
 
+                // Envía el nombre de usuario al servidor
                 String username = txtUsername.getText().trim();
-                if (username.isEmpty()) username = "Anónimo";
+                if (username.isEmpty()) username = "Anónimo";  // Si no se proporciona un nombre, se usa "Anónimo"
                 out.println(username);
 
+                // Hilo para escuchar los mensajes del servidor
                 listenThread = new Thread(() -> {
                     try {
                         String msg;
-                        while ((msg = in.readLine()) != null) {
-                            chatArea.append(msg + "\n");
+                        while ((msg = in.readLine()) != null) {  // Lee los mensajes del servidor
+                            chatArea.append(msg + "\n");  // Muestra los mensajes en el área de chat
                         }
                     } catch (IOException e) {
-                        chatArea.append("Conexión cerrada.\n");
+                        chatArea.append("Conexión cerrada.\n");  // Muestra mensaje cuando la conexión se cierra
                     }
                 });
-                listenThread.start();
+                listenThread.start();  // Inicia el hilo para escuchar mensajes
 
-                chatArea.append("Conectado al servidor como " + username + ".\n");
-                btnConnect.setText("Desconectar");
-                connected = true;
-            } catch (Exception ex) {
+                chatArea.append("Conectado al servidor como " + username + ".\n");  // Notifica que se ha conectado
+                btnConnect.setText("Desconectar");  // Cambia el texto del botón
+                connected = true;  // Establece la bandera de conexión
+            } catch (Exception ex) {  // Si ocurre un error al conectar, muestra un mensaje
                 JOptionPane.showMessageDialog(this, "Error de conexión: " + ex.getMessage());
             }
-        } else {
+        } else {  // Si ya está conectado, desconecta
             try {
                 if (out != null) out.close();
                 if (in != null) in.close();
@@ -99,21 +100,23 @@ public class ChatClientGUI extends JFrame {
                 btnConnect.setText("Conectar");
                 connected = false;
             } catch (IOException e) {
-                //
+                // Si ocurre un error al desconectar, no hace nada
             }
         }
     }
 
+    // Método para enviar un mensaje al servidor
     private void sendMessage() {
         if (connected && !txtMessage.getText().trim().isEmpty()) {
-            String msg = txtMessage.getText();
-            out.println(msg);
-            chatArea.append("Tú: " + msg + "\n");
-            txtMessage.setText("");
+            String msg = txtMessage.getText();  // Obtiene el mensaje
+            out.println(msg);  // Envía el mensaje al servidor
+            chatArea.append("Tú: " + msg + "\n");  // Muestra el mensaje en el área de chat
+            txtMessage.setText("");  // Limpia el campo de texto para nuevos mensajes
         }
     }
 
+    // Método principal para ejecutar la interfaz gráfica
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new ChatClientGUI().setVisible(true));
+        SwingUtilities.invokeLater(() -> new ChatClientGUI().setVisible(true));  // Ejecuta el cliente en el hilo de la interfaz gráfica
     }
 }
