@@ -1,122 +1,126 @@
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.io.*;
 import java.net.*;
 
 public class ChatClientGUI extends JFrame {
-    private JTextField txtIP, txtPort, txtMessage;  // Campos de texto para ingresar IP, puerto y mensajes
-    private JButton btnConnect;  // Botón para conectar/desconectar
-    private JTextArea chatArea;  // Área de texto para mostrar los mensajes del chat
-    private JTextField txtUsername;  // Campo de texto para el nombre de usuario
+    private JTextField txtMessage;
+    private JTextArea chatArea;
+    private Socket socket;
+    private PrintWriter out;
+    private BufferedReader in;
+    private Thread listenThread;
+    private boolean connected = false;
+    private String ip;
+    private int port;
+    private String username;
 
-    private Socket socket;  // Socket para la conexión con el servidor
-    private PrintWriter out;  // Flujo de salida para enviar mensajes al servidor
-    private BufferedReader in;  // Flujo de entrada para recibir mensajes del servidor
-    private Thread listenThread;  // Hilo para escuchar los mensajes entrantes del servidor
+    public ChatClientGUI(String ip, int port, String username) {
+        this.ip = ip;
+        this.port = port;
+        this.username = username;
 
-    private boolean connected = false;  // Bandera para saber si el cliente está conectado
+        setTitle("Chat Cliente - " + username);
+        setSize(520, 430);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLayout(new BorderLayout(10, 10));
+        setLocationRelativeTo(null);
 
-    public ChatClientGUI() {
-        setTitle("Chat Cliente");  // Título de la ventana
-        setSize(500, 400);  // Tamaño de la ventana
-        setDefaultCloseOperation(EXIT_ON_CLOSE);  // Acción al cerrar la ventana
-        setLayout(new BorderLayout());  // Layout de la ventana (distribución de los componentes)
-
-        // Panel superior con campos de IP, puerto y nombre de usuario
-        JPanel topPanel = new JPanel();
-        txtIP = new JTextField("127.0.0.1", 10);  // IP por defecto (localhost)
-        txtPort = new JTextField("9090", 5);  // Puerto por defecto
-        txtUsername = new JTextField("Usuario", 8);  // Nombre de usuario por defecto
-        btnConnect = new JButton("Conectar");  // Botón para conectar/desconectar
-        topPanel.add(new JLabel("IP:"));
-        topPanel.add(txtIP);
-        topPanel.add(new JLabel("Puerto:"));
-        topPanel.add(txtPort);
-        topPanel.add(new JLabel("Nombre:"));
-        topPanel.add(txtUsername);
-        topPanel.add(btnConnect);
-        topPanel.setPreferredSize(new Dimension(0, 60));
-        add(topPanel, BorderLayout.NORTH);
-
-        // Área de chat donde se mostrarán los mensajes
+        // Área de chat
         chatArea = new JTextArea();
-        chatArea.setEditable(false);  // No se puede editar directamente desde el área de chat
-        add(new JScrollPane(chatArea), BorderLayout.CENTER);
+        chatArea.setEditable(false);
+        chatArea.setFont(new Font("Segoe UI", Font.PLAIN, 15));
+        chatArea.setBackground(new Color(245, 245, 245));
+        chatArea.setBorder(new EmptyBorder(10, 10, 10, 10));
+        chatArea.setLineWrap(true);
+        chatArea.setWrapStyleWord(true);
 
-        // Panel inferior con campo para el mensaje y botón para enviarlo
-        JPanel bottomPanel = new JPanel();
-        txtMessage = new JTextField(30);
+        JScrollPane scrollPane = new JScrollPane(chatArea);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(200, 200, 200), 2));
+        add(scrollPane, BorderLayout.CENTER);
+
+        // Panel inferior
+        JPanel bottomPanel = new JPanel(new BorderLayout(8, 0));
+        bottomPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        txtMessage = new JTextField();
+        txtMessage.setFont(new Font("Segoe UI", Font.PLAIN, 15));
+        txtMessage.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                new EmptyBorder(5, 8, 5, 8)
+        ));
+
         JButton btnSend = new JButton("Enviar");
-        bottomPanel.add(txtMessage);
-        bottomPanel.add(btnSend);
+        btnSend.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        btnSend.setBackground(new Color(0, 120, 215));
+        btnSend.setForeground(Color.WHITE);
+        btnSend.setFocusPainted(false);
+
+        bottomPanel.add(txtMessage, BorderLayout.CENTER);
+        bottomPanel.add(btnSend, BorderLayout.EAST);
         add(bottomPanel, BorderLayout.SOUTH);
 
-        // Eventos (Acciones de los botones)
-        btnConnect.addActionListener(e -> toggleConnection());  // Conectar/desconectar
-        btnSend.addActionListener(e -> sendMessage());  // Enviar mensaje
-        txtMessage.addActionListener(e -> sendMessage());  // Enviar mensaje al presionar Enter
+        // Enviar mensaje al presionar botón o Enter
+        btnSend.addActionListener(e -> sendMessage());
+        txtMessage.addActionListener(e -> sendMessage());
+
+        connectToServer();
     }
 
-    // Método para conectar o desconectar del servidor
-    private void toggleConnection() {
-        if (!connected) {  // Si no está conectado, intenta conectar
-            try {
-                // Crea el socket con la IP y el puerto proporcionados
-                socket = new Socket(txtIP.getText(), Integer.parseInt(txtPort.getText()));
-                out = new PrintWriter(socket.getOutputStream(), true);  // Flujo de salida
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));  // Flujo de entrada
+    // Conexión al servidor y escucha de mensajes
+    private void connectToServer() {
+        try {
+            socket = new Socket(ip, port);
+            out = new PrintWriter(socket.getOutputStream(), true);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
+            if (username.isEmpty()) username = "Anónimo";
+            out.println(username);
 
-                // Envía el nombre de usuario al servidor
-                String username = txtUsername.getText().trim();
-                if (username.isEmpty()) username = "Anónimo";  // Si no se proporciona un nombre, se usa "Anónimo"
-                out.println(username);
-
-                // Hilo para escuchar los mensajes del servidor
-                listenThread = new Thread(() -> {
-                    try {
-                        String msg;
-                        while ((msg = in.readLine()) != null) {  // Lee los mensajes del servidor
-                            chatArea.append(msg + "\n");  // Muestra los mensajes en el área de chat
-                        }
-                    } catch (IOException e) {
-                        chatArea.append("Conexión cerrada.\n");  // Muestra mensaje cuando la conexión se cierra
+            // Hilo para recibir mensajes del servidor
+            listenThread = new Thread(() -> {
+                try {
+                    String msg;
+                    while ((msg = in.readLine()) != null) {
+                        chatArea.append(msg + "\n");
+                        chatArea.setCaretPosition(chatArea.getDocument().getLength());
                     }
-                });
-                listenThread.start();  // Inicia el hilo para escuchar mensajes
+                } catch (IOException e) {
+                    chatArea.append("Conexión cerrada.\n");
+                }
+            });
+            listenThread.start();
 
-                chatArea.append("Conectado al servidor como " + username + ".\n");  // Notifica que se ha conectado
-                btnConnect.setText("Desconectar");  // Cambia el texto del botón
-                connected = true;  // Establece la bandera de conexión
-            } catch (Exception ex) {  // Si ocurre un error al conectar, muestra un mensaje
-                JOptionPane.showMessageDialog(this, "Error de conexión: " + ex.getMessage());
-            }
-        } else {  // Si ya está conectado, desconecta
-            try {
-                if (out != null) out.close();
-                if (in != null) in.close();
-                if (socket != null) socket.close();
-                if (listenThread != null) listenThread.interrupt();
-                chatArea.append("Desconectado del servidor.\n");
-                btnConnect.setText("Conectar");
-                connected = false;
-            } catch (IOException e) {
-                // Si ocurre un error al desconectar, no hace nada
-            }
+            chatArea.append("Conectado al servidor como " + username + ".\n");
+            connected = true;
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error de conexión: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            System.exit(0);
         }
     }
 
-    // Método para enviar un mensaje al servidor
+    // Envía el mensaje al servidor y lo muestra en el área de chat
     private void sendMessage() {
         if (connected && !txtMessage.getText().trim().isEmpty()) {
-            String msg = txtMessage.getText();  // Obtiene el mensaje
-            out.println(msg);  // Envía el mensaje al servidor
-            chatArea.append("Tú: " + msg + "\n");  // Muestra el mensaje en el área de chat
-            txtMessage.setText("");  // Limpia el campo de texto para nuevos mensajes
+            String msg = txtMessage.getText();
+            out.println(msg);
+            chatArea.append("Tú: " + msg + "\n");
+            chatArea.setCaretPosition(chatArea.getDocument().getLength());
+            txtMessage.setText("");
         }
     }
 
-    // Método principal para ejecutar la interfaz gráfica
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new ChatClientGUI().setVisible(true));  // Ejecuta el cliente en el hilo de la interfaz gráfica
+        SwingUtilities.invokeLater(() -> {
+            LoginDialog login = new LoginDialog(null);
+            login.setVisible(true);
+            if (login.isConfirmed()) {
+                String ip = login.getIP();
+                int port = Integer.parseInt(login.getPort());
+                String username = login.getUsername();
+                new ChatClientGUI(ip, port, username).setVisible(true);
+            } else {
+                System.exit(0);
+            }
+        });
     }
 }
